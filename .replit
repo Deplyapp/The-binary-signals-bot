@@ -4,4 +4,32 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["chromium", "cairo", "pango", "libjpeg", "giflib", "librsvg"]
+packages = ["chromium", "cairo", "pango", "libjpeg", "giflib", "librsvg", "libuuid", "pixman", "liberation_ttf", "alsa-lib", "at-spi2-atk", "atk", "cups", "dbus", "libdrm", "mesa", "gtk3", "nspr", "nss", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXfixes", "libxkbcommon", "xorg.libXrandr", "xdg-utils", "glib", "freetype", "fontconfig"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Telegram Bot"
+
+[[workflows.workflow]]
+name = "Telegram Bot"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+waitForPort = 5000
+
+[[ports]]
+localPort = 5000
+externalPort = 80

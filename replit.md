@@ -86,7 +86,22 @@ npm run db:push   # Push schema to database
 
 ## Recent Changes
 
-- Cloned from https://github.com/Deplyapp/Sop.git
-- Fixed chart rendering with proper Chromium path detection
-- Created Dockerfile for Koyeb/Render deployment
-- Added comprehensive README.md documentation
+- Cloned from https://github.com/Deplyapp/fi.git
+- **Fixed chart rendering blank issue** (December 2024):
+  - Wait for LightweightCharts library to fully load from CDN
+  - Added `isChartReady()` function to verify chart data is rendered
+  - Increased rendering delay from 500ms to 800ms
+  - Added retry logic for network/timeout errors
+  - Use `networkidle0` wait strategy for reliable CDN loading
+- Fixed TypeScript configuration with ES2020 target and downlevelIteration
+- Installed system dependencies: Chromium, Cairo, Pango, libuuid, pixman
+- Bot now running successfully with Puppeteer chart rendering
+
+## Chart Rendering Flow
+
+1. Puppeteer creates a new page for each chart render
+2. Waits for LightweightCharts library to load from CDN
+3. Calls `renderChart()` with candle data and signal info
+4. Waits for `isChartReady()` to return true (data rendered)
+5. Additional 800ms delay for visual rendering
+6. Takes screenshot and returns PNG buffer
