@@ -76,6 +76,8 @@ const chartHtml = `
     let chart = null;
     let candleSeries = null;
     let indicators = {};
+    let chartDataLoaded = false;
+    let candleCount = 0;
 
     function initChart() {
       const container = document.getElementById('chart');
@@ -153,75 +155,83 @@ const chartHtml = `
     }
 
     function renderChart(data) {
-      if (!chart) initChart();
+      try {
+        if (!chart) initChart();
 
-      // Process candles
-      const closedCandles = data.candles.map(c => ({
-        time: c.timestamp,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      }));
+        const closedCandles = data.candles.map(c => ({
+          time: c.timestamp,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+        }));
 
-      // Add forming candle with muted colors if present
-      if (data.formingCandle) {
-        closedCandles.push({
-          time: data.formingCandle.timestamp,
-          open: data.formingCandle.open,
-          high: data.formingCandle.high,
-          low: data.formingCandle.low,
-          close: data.formingCandle.close,
-        });
-      }
-
-      candleSeries.setData(closedCandles);
-
-      // Add indicator overlays
-      if (data.indicators) {
-        const timestamps = data.candles.map(c => c.timestamp);
-        
-        // EMA21
-        if (data.indicators.ema21 !== undefined) {
-          // For simplicity, we'll show a marker. Real implementation would need historical values.
+        if (data.formingCandle) {
+          closedCandles.push({
+            time: data.formingCandle.timestamp,
+            open: data.formingCandle.open,
+            high: data.formingCandle.high,
+            low: data.formingCandle.low,
+            close: data.formingCandle.close,
+          });
         }
-      }
 
-      // Add signal overlay
-      const container = document.getElementById('chart-container');
-      
-      if (data.signal) {
-        const signalDiv = document.createElement('div');
-        signalDiv.className = 'signal-overlay';
-        
-        switch (data.signal.direction) {
-          case 'CALL':
-            signalDiv.className += ' signal-call';
-            signalDiv.textContent = 'CALL ' + data.signal.confidence + '%';
-            break;
-          case 'PUT':
-            signalDiv.className += ' signal-put';
-            signalDiv.textContent = 'PUT ' + data.signal.confidence + '%';
-            break;
-          default:
-            signalDiv.className += ' signal-no-trade';
-            signalDiv.textContent = 'NO TRADE';
+        candleCount = closedCandles.length;
+        candleSeries.setData(closedCandles);
+
+        if (data.indicators) {
+          const timestamps = data.candles.map(c => c.timestamp);
+          
+          if (data.indicators.ema21 !== undefined) {
+          }
         }
+
+        const container = document.getElementById('chart-container');
         
-        container.appendChild(signalDiv);
-      }
+        if (data.signal) {
+          const signalDiv = document.createElement('div');
+          signalDiv.className = 'signal-overlay';
+          
+          switch (data.signal.direction) {
+            case 'CALL':
+              signalDiv.className += ' signal-call';
+              signalDiv.textContent = 'CALL ' + data.signal.confidence + '%';
+              break;
+            case 'PUT':
+              signalDiv.className += ' signal-put';
+              signalDiv.textContent = 'PUT ' + data.signal.confidence + '%';
+              break;
+            default:
+              signalDiv.className += ' signal-no-trade';
+              signalDiv.textContent = 'NO TRADE';
+          }
+          
+          container.appendChild(signalDiv);
+        }
 
-      if (data.formingCandle) {
-        const provLabel = document.createElement('div');
-        provLabel.className = 'provisional-label';
-        provLabel.textContent = 'PROVISIONAL';
-        container.appendChild(provLabel);
-      }
+        if (data.formingCandle) {
+          const provLabel = document.createElement('div');
+          provLabel.className = 'provisional-label';
+          provLabel.textContent = 'PROVISIONAL';
+          container.appendChild(provLabel);
+        }
 
-      chart.timeScale().fitContent();
+        chart.timeScale().fitContent();
+        
+        chartDataLoaded = true;
+      } catch (error) {
+        console.error('Chart render error:', error);
+        chartDataLoaded = false;
+      }
+    }
+
+    function isChartReady() {
+      return chartDataLoaded && candleCount > 0 && chart !== null;
     }
 
     window.renderChart = renderChart;
+    window.isChartReady = isChartReady;
+    window.chartDataLoaded = false;
   </script>
 </body>
 </html>
@@ -319,7 +329,7 @@ export async function initRenderService(): Promise<void> {
 }
 
 export async function renderChart(data: ChartRenderRequest): Promise<Buffer> {
-  const maxRetries = 2;
+  const maxRetries = 3;
   let lastError: Error | null = null;
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -332,19 +342,27 @@ export async function renderChart(data: ChartRenderRequest): Promise<Buffer> {
         throw new Error("Render service not available");
       }
       
-      // Create a new page for each render to avoid detached frame issues
       const renderPage = await browser!.newPage();
       await renderPage.setViewport({ width: CHART_WIDTH, height: CHART_HEIGHT });
       
       try {
-        await renderPage.setContent(chartHtml);
-        await renderPage.waitForFunction('window.renderChart !== undefined', { timeout: 5000 });
+        await renderPage.setContent(chartHtml, { waitUntil: 'networkidle0', timeout: 15000 });
+        
+        await renderPage.waitForFunction(
+          'typeof LightweightCharts !== "undefined" && window.renderChart !== undefined',
+          { timeout: 10000 }
+        );
         
         await renderPage.evaluate((chartData) => {
           (window as unknown as { renderChart: (d: unknown) => void }).renderChart(chartData);
         }, data);
         
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await renderPage.waitForFunction(
+          'window.isChartReady && window.isChartReady()',
+          { timeout: 5000 }
+        );
+        
+        await new Promise(resolve => setTimeout(resolve, 800));
         
         const screenshot = await renderPage.screenshot({
           type: 'png',
@@ -352,6 +370,7 @@ export async function renderChart(data: ChartRenderRequest): Promise<Buffer> {
         });
         
         await renderPage.close();
+        logger.debug(`Chart rendered successfully with ${data.candles?.length || 0} candles`);
         return Buffer.from(screenshot);
       } catch (renderError) {
         await renderPage.close().catch(() => {});
@@ -361,18 +380,19 @@ export async function renderChart(data: ChartRenderRequest): Promise<Buffer> {
       lastError = error as Error;
       const errorMessage = (error as Error).message || '';
       
-      // If it's a detached frame or browser issue, reinitialize
       if (errorMessage.includes('detached') || 
           errorMessage.includes('Target closed') ||
           errorMessage.includes('Session closed') ||
-          errorMessage.includes('Protocol error')) {
-        logger.warn(`Render attempt ${attempt + 1} failed with browser error, reinitializing...`);
+          errorMessage.includes('Protocol error') ||
+          errorMessage.includes('timeout') ||
+          errorMessage.includes('net::ERR')) {
+        logger.warn(`Render attempt ${attempt + 1} failed: ${errorMessage}, retrying...`);
         await cleanupBrowser();
         isInitialized = false;
+        await new Promise(resolve => setTimeout(resolve, 500));
         continue;
       }
       
-      // For other errors, don't retry
       logger.error("Failed to render chart", error);
       throw error;
     }
