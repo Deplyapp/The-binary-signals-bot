@@ -3,7 +3,7 @@ import { derivFeed } from "./derivFeed";
 import { candleAggregator } from "./candleAggregator";
 import { generateSignal } from "./signalEngine";
 import { SIGNAL_CONFIG } from "../config/indicators";
-import { getCandleCloseTime, scheduleAt, nowEpoch } from "../utils/time";
+import { getCandleCloseTime, nowEpoch } from "../utils/time";
 import { createLogger } from "../utils/logger";
 import { getVolatilityInfo, shouldNoTrade } from "./volatilityService";
 import { detectMarketRegime, shouldTradeInCurrentCondition } from "./marketRegimeDetector";
@@ -13,7 +13,6 @@ const logger = createLogger("SessionManager");
 
 interface ActiveSession extends Session {
   signalTimer?: ReturnType<typeof setTimeout>;
-  preCloseTimer?: ReturnType<typeof setTimeout>;
   lastSignalCandleTimestamp?: number;
   preferences?: UserPreferences;
 }
@@ -21,10 +20,12 @@ interface ActiveSession extends Session {
 class SessionManager extends EventEmitter {
   private sessions: Map<string, ActiveSession> = new Map();
   private tickHandlers: Map<string, (tick: unknown) => void> = new Map();
+  private candleCloseHandler: ((symbol: string, timeframe: number, closedCandle: Candle) => void) | null = null;
 
   constructor() {
     super();
     this.setupDerivListeners();
+    this.setupCandleCloseListener();
   }
 
   private setupDerivListeners(): void {
@@ -41,6 +42,30 @@ class SessionManager extends EventEmitter {
       logger.warn("Deriv feed disconnected");
       this.emit("feedDisconnected");
     });
+  }
+
+  private setupCandleCloseListener(): void {
+    this.candleCloseHandler = (symbol: string, timeframe: number, closedCandle: Candle) => {
+      for (const session of this.sessions.values()) {
+        if (session.status === "active" && session.symbol === symbol && session.timeframe === timeframe) {
+          const candleKey = `${symbol}-${timeframe}-${closedCandle.timestamp}`;
+          const lastKey = session.lastSignalCandleTimestamp 
+            ? `${symbol}-${timeframe}-${session.lastSignalCandleTimestamp}`
+            : null;
+          
+          if (candleKey !== lastKey) {
+            logger.info(`Candle closed for ${symbol} ${timeframe}s - emitting signal immediately (session ${session.id})`);
+            this.emitCandleCloseSignal(session.id, closedCandle);
+            session.lastSignalCandleTimestamp = closedCandle.timestamp;
+          } else {
+            logger.debug(`Skipping duplicate signal for candle ${closedCandle.timestamp}`);
+          }
+        }
+      }
+    };
+
+    candleAggregator.on("closed", this.candleCloseHandler);
+    logger.info("Candle close listener initialized - signals will be sent WHEN candles close");
   }
 
   async startSession(
@@ -89,10 +114,8 @@ class SessionManager extends EventEmitter {
 
     await derivFeed.subscribeTicks(symbol, sessionId);
 
-    this.scheduleNextPreClose(sessionId);
-
     this.emit("sessionStarted", session);
-    logger.info(`Session ${sessionId} started successfully`);
+    logger.info(`Session ${sessionId} started successfully - signals will emit on candle close`);
 
     return session;
   }
@@ -107,87 +130,13 @@ class SessionManager extends EventEmitter {
     );
   }
 
-  private scheduleNextPreClose(sessionId: string): void {
-    const session = this.sessions.get(sessionId);
-    if (!session || session.status !== "active") return;
-
-    if (session.preCloseTimer) {
-      clearTimeout(session.preCloseTimer);
-      session.preCloseTimer = undefined;
-    }
-
-    const formingCandle = candleAggregator.getFormingCandle(session.symbol, session.timeframe);
-    if (!formingCandle) {
-      logger.debug(`No forming candle for session ${sessionId}, retrying in 1s`);
-      session.preCloseTimer = setTimeout(() => {
-        this.scheduleNextPreClose(sessionId);
-      }, 1000);
-      return;
-    }
-
-    const candleCloseTime = getCandleCloseTime(formingCandle.timestamp, session.timeframe);
-    const preCloseTime = candleCloseTime - SIGNAL_CONFIG.preCloseSeconds;
-    const now = nowEpoch();
-
-    const candleSignalKey = `${session.symbol}-${session.timeframe}-${formingCandle.timestamp}`;
-    const lastCandleSignalKey = session.lastSignalCandleTimestamp 
-      ? `${session.symbol}-${session.timeframe}-${session.lastSignalCandleTimestamp}`
-      : null;
-
-    if (preCloseTime <= now) {
-      if (candleSignalKey !== lastCandleSignalKey) {
-        logger.info(`Emitting signal for candle ${formingCandle.timestamp} (session ${sessionId})`);
-        this.emitPreCloseSignal(sessionId, candleCloseTime);
-        session.lastSignalCandleTimestamp = formingCandle.timestamp;
-      } else {
-        logger.debug(`Skipping duplicate signal for candle ${formingCandle.timestamp}`);
-      }
-      
-      const nextCandleStart = candleCloseTime;
-      const nextPreClose = nextCandleStart + session.timeframe - SIGNAL_CONFIG.preCloseSeconds;
-      const delayMs = Math.max(500, (nextPreClose - nowEpoch()) * 1000);
-      
-      logger.debug(`Next signal check scheduled in ${delayMs}ms for session ${sessionId}`);
-      session.preCloseTimer = setTimeout(() => {
-        this.scheduleNextPreClose(sessionId);
-      }, delayMs);
-    } else {
-      const delayMs = Math.max(100, (preCloseTime - now) * 1000);
-      logger.debug(`Scheduling pre-close signal in ${delayMs}ms for session ${sessionId}`);
-      
-      session.preCloseTimer = setTimeout(() => {
-        const currentSession = this.sessions.get(sessionId);
-        if (!currentSession || currentSession.status !== "active") return;
-        
-        const currentFormingCandle = candleAggregator.getFormingCandle(session.symbol, session.timeframe);
-        if (!currentFormingCandle) {
-          this.scheduleNextPreClose(sessionId);
-          return;
-        }
-        
-        const currentKey = `${session.symbol}-${session.timeframe}-${currentFormingCandle.timestamp}`;
-        const lastKey = currentSession.lastSignalCandleTimestamp 
-          ? `${session.symbol}-${session.timeframe}-${currentSession.lastSignalCandleTimestamp}`
-          : null;
-        
-        if (currentKey !== lastKey) {
-          const currentCandleCloseTime = getCandleCloseTime(currentFormingCandle.timestamp, session.timeframe);
-          logger.info(`Emitting scheduled signal for candle ${currentFormingCandle.timestamp} (session ${sessionId})`);
-          this.emitPreCloseSignal(sessionId, currentCandleCloseTime);
-          currentSession.lastSignalCandleTimestamp = currentFormingCandle.timestamp;
-        }
-        
-        this.scheduleNextPreClose(sessionId);
-      }, delayMs);
-    }
-  }
-
-  private emitPreCloseSignal(sessionId: string, candleCloseTime: number): void {
+  private emitCandleCloseSignal(sessionId: string, closedCandle: Candle): void {
     const session = this.sessions.get(sessionId);
     if (!session || session.status !== "active") return;
 
     const closedCandles = candleAggregator.getClosedCandles(session.symbol, session.timeframe);
     const formingCandle = candleAggregator.getFormingCandle(session.symbol, session.timeframe);
+    const candleCloseTime = closedCandle.timestamp + session.timeframe;
 
     const marketCondition = detectMarketRegime(closedCandles);
     logger.debug(`Market condition for ${session.symbol}: ${marketCondition.regime} (tradeable: ${marketCondition.isTradeable})`);
@@ -227,8 +176,8 @@ class SessionManager extends EventEmitter {
 
     session.lastSignalAt = signal.timestamp;
     
-    this.emit("preCloseSignal", session, signal);
-    logger.info(`Pre-close signal emitted for ${session.symbol}: ${signal.direction} (${signal.confidence}%)`);
+    this.emit("candleCloseSignal", session, signal);
+    logger.info(`Candle close signal emitted for ${session.symbol}: ${signal.direction} (${signal.confidence}%) - candle closed at ${closedCandle.close}`);
   }
 
   async stopSession(sessionId: string): Promise<void> {
@@ -242,9 +191,6 @@ class SessionManager extends EventEmitter {
 
     session.status = "stopped";
 
-    if (session.preCloseTimer) {
-      clearTimeout(session.preCloseTimer);
-    }
     if (session.signalTimer) {
       clearTimeout(session.signalTimer);
     }
@@ -278,8 +224,8 @@ class SessionManager extends EventEmitter {
     candleAggregator.initialize(session.symbol, session.timeframe, historyCandles, 500);
 
     await derivFeed.subscribeTicks(session.symbol, sessionId);
-
-    this.scheduleNextPreClose(sessionId);
+    
+    logger.info(`Session ${sessionId} restarted - listening for candle close events`);
   }
 
   getSession(sessionId: string): Session | undefined {

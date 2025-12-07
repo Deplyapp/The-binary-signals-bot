@@ -3,6 +3,8 @@ import { predictWithFormingCandle } from "./predictionEngine";
 import { getIndicatorWeight, isIndicatorEnabled, SIGNAL_CONFIG, VOLATILITY_CONFIG, QUALITY_THRESHOLDS } from "../config/indicators";
 import { enhanceSignalWithBrain, advancedAnalysis } from "./advancedBrain";
 import { detectMarketRegime, shouldTradeInCurrentCondition, getMarketConditionPenalty, type MarketCondition } from "./marketRegimeDetector";
+import { analyzeMultiTimeframe, getConfluenceBonus, type MTFAnalysis } from "./multiTimeframeEngine";
+import { analyzeAdvancedPatterns, getAdvancedPatternVotes } from "./advancedPatterns";
 import { createLogger } from "../utils/logger";
 
 const logger = createLogger("SignalEngine");
@@ -626,10 +628,39 @@ export function generateSignal(
   
   const lastClose = prediction.estimatedClose;
   const votes = collectVotes(prediction.indicators, prediction.psychology, lastClose, options);
+  
+  const advancedPatternAnalysis = analyzeAdvancedPatterns(closedCandles);
+  const advancedVotes = getAdvancedPatternVotes(advancedPatternAnalysis);
+  
+  for (const av of advancedVotes) {
+    votes.push(av);
+  }
+  
+  if (advancedPatternAnalysis.harmonicPatterns.length > 0 || advancedPatternAnalysis.chartPatterns.length > 0) {
+    logger.info(`Advanced patterns for ${symbol}: ${advancedPatternAnalysis.harmonicPatterns.length} harmonic, ${advancedPatternAnalysis.chartPatterns.length} chart patterns, bias=${advancedPatternAnalysis.dominantBias}`);
+  }
+  
   const scores = calculateScores(votes, marketCondition);
   
-  const variedConfidence = applyConfidenceVariation(symbol, scores.confidence);
+  const mtfAnalysis = analyzeMultiTimeframe(symbol, timeframe, closedCandles);
+  logger.info(`MTF Analysis for ${symbol}: bias=${mtfAnalysis.overallBias}, confluence=${mtfAnalysis.confluenceScore.toFixed(1)}%, HTFs analyzed=${mtfAnalysis.higherTimeframes.length}`);
+  
+  const preliminaryDirection = scores.pUp > 0.5 ? "CALL" : "PUT";
+  const mtfBonus = getConfluenceBonus(mtfAnalysis, preliminaryDirection);
+  
+  const confidenceWithMTF = Math.min(95, scores.confidence + mtfBonus);
+  const variedConfidence = applyConfidenceVariation(symbol, confidenceWithMTF);
   const adjustedScores = { ...scores, confidence: variedConfidence };
+  
+  if (mtfBonus > 0) {
+    logger.info(`MTF confluence bonus applied: +${mtfBonus}% (final confidence: ${variedConfidence}%)`);
+    votes.push({
+      indicator: "mtf_confluence",
+      direction: preliminaryDirection === "CALL" ? "UP" : "DOWN",
+      weight: 1 + mtfBonus * 0.1,
+      reason: `Higher timeframe confluence: ${mtfAnalysis.higherTimeframes.length} HTFs aligned ${mtfAnalysis.overallBias}`,
+    });
+  }
   
   const direction = determineDirection(adjustedScores, marketCondition);
   

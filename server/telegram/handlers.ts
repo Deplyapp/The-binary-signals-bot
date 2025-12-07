@@ -492,7 +492,7 @@ async function handleTimeframeSelection(
     `${EMOJIS.CLOCK} Timeframe: *${tfLabel}*\n` +
     `${tzInfo?.emoji || '🌍'} Timezone: *${state.preferences.timezone}*\n` +
     `${getConfidenceEmoji(state.preferences.confidenceFilter)} Min Confidence: *${state.preferences.confidenceFilter}%*\n\n` +
-    `${EMOJIS.INFO} Signals sent 1 second before candle close (real-time)\n` +
+    `${EMOJIS.INFO} Signals sent WHEN candle closes (real-time confirmation)\n` +
     `${EMOJIS.WARNING} NO TRADE shown if confidence < 75% (with direction - at your own risk)`,
     {
       chat_id: chatId,

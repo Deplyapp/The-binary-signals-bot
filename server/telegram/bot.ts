@@ -83,7 +83,7 @@ export function initTelegramBot(token: string): TelegramBot | null {
 `2. Choose a timeframe\n` +
 `3. Configure timezone & confidence filter\n` +
 `4. Start the session (multiple sessions allowed)\n` +
-`5. Receive signals 1s before candle close (real-time)\n\n` +
+`5. Receive signals WHEN candles close (real-time)\n\n` +
 
 `${EMOJIS.TARGET} *Signal Types:*\n` +
 `${EMOJIS.CALL} *CALL* - Predicted upward movement\n` +
@@ -114,11 +114,12 @@ export function initTelegramBot(token: string): TelegramBot | null {
       logger.error("Telegram polling error", error);
     });
     
-    sessionManager.on("preCloseSignal", async (session: Session, signal: SignalResult) => {
+    sessionManager.on("candleCloseSignal", async (session: Session, signal: SignalResult) => {
       if (bot && session.status === "active") {
         try {
           const prefs = getUserPreferences(session.chatId);
           await sendSignalToChat(bot, session.chatId, session, signal, prefs);
+          logger.info(`Signal sent to chat ${session.chatId} - triggered by candle close`);
         } catch (error) {
           logger.error(`Failed to send signal to chat ${session.chatId}`, error);
         }

@@ -97,6 +97,51 @@ npm run db:push   # Push schema to database
 - Installed system dependencies: Chromium, Cairo, Pango, libuuid, pixman
 - Bot now running successfully with Puppeteer chart rendering
 
+### Major Enhancements (December 2024)
+
+1. **Candle Completion Trigger System**:
+   - Signals are now sent WHEN candles close, not before
+   - Uses candleAggregator "closed" event listener for precise timing
+   - Ensures analysis is based on complete candle data
+
+2. **Multi-Timeframe Analysis Engine** (`multiTimeframeEngine.ts`):
+   - Higher timeframe confluence scoring adds confidence bonus (up to 15%)
+   - Timeframe mapping: 1M->5M/15M, 5M->15M/30M, 15M->30M/1H
+   - Analyzes EMA trends, MACD, RSI, Supertrend on higher timeframes
+   - MTF alignment ADDS to confidence, never blocks signals
+
+3. **Expanded Candlestick Pattern Detection** (15+ new patterns):
+   - Three White Soldiers, Three Black Crows
+   - Inside Bar, Outside Bar
+   - Tweezer Top/Bottom
+   - Rising/Falling Three Methods
+   - Piercing Line, Dark Cloud Cover
+   - Bullish/Bearish Harami
+   - Inverted Hammer, Hanging Man
+
+4. **Harmonic Pattern Recognition** (`advancedPatterns.ts`):
+   - Gartley, Butterfly, Bat, Crab, Cypher patterns
+   - Fibonacci ratio validation with tolerance
+   - Each pattern adds votes to signal generation
+
+5. **Chart Pattern Detection**:
+   - Head & Shoulders, Inverse Head & Shoulders
+   - Double Top, Double Bottom
+   - Ascending/Descending/Symmetrical Triangles
+   - Bull/Bear Flags
+   - Rising/Falling Wedges
+
+## Signal Engine Architecture
+
+The signal engine now uses a voting system combining:
+- 35+ technical indicators (original)
+- 22+ candlestick patterns (expanded)
+- 5 harmonic patterns
+- 10+ chart patterns
+- Multi-timeframe confluence bonuses
+
+All pattern detections ADD to the voting pool for MORE frequent high-confidence signals.
+
 ## Chart Rendering Flow
 
 1. Puppeteer creates a new page for each chart render

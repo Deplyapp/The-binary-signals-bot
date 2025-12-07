@@ -1,10 +1,22 @@
-modules = ["nodejs-20"]
-[agent]
-expertMode = true
+modules = ["nodejs-20", "web", "postgresql-16"]
+run = "npm run dev"
+hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
-channel = "stable-25_05"
-packages = ["chromium", "cairo", "pango", "libjpeg", "giflib", "librsvg", "libuuid", "pixman", "liberation_ttf", "alsa-lib", "at-spi2-atk", "atk", "cups", "dbus", "libdrm", "mesa", "gtk3", "nspr", "nss", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXfixes", "libxkbcommon", "xorg.libXrandr", "xdg-utils", "glib", "freetype", "fontconfig"]
+channel = "stable-24_05"
+packages = ["libuuid", "util-linux"]
+
+[deployment]
+deploymentTarget = "autoscale"
+build = ["npm", "run", "build"]
+run = ["npm", "run", "start"]
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[env]
+PORT = "5000"
 
 [workflows]
 runButton = "Project"
@@ -16,20 +28,13 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Telegram Bot"
+args = "Start application"
 
 [[workflows.workflow]]
-name = "Telegram Bot"
+name = "Start application"
 author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
-
-[[ports]]
-localPort = 5000
-externalPort = 80
