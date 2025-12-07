@@ -28,6 +28,7 @@ export function initTelegramBot(token: string): TelegramBot | null {
     bot = new TelegramBot(token, { polling: true });
     
     bot.on("message", async (msg) => {
+      try {
       const chatId = msg.chat.id;
       
       if (msg.text === "/start") {
@@ -104,10 +105,25 @@ export function initTelegramBot(token: string): TelegramBot | null {
         
         await bot!.sendMessage(chatId, helpText, { parse_mode: "Markdown" });
       }
+      } catch (error) {
+        logger.error("Error handling message", error);
+      }
     });
     
     bot.on("callback_query", async (query) => {
-      await handleCallback(bot!, query);
+      try {
+        await handleCallback(bot!, query);
+      } catch (error) {
+        logger.error("Error handling callback query", error);
+        try {
+          await bot!.answerCallbackQuery(query.id, {
+            text: "An error occurred. Please try again.",
+            show_alert: false
+          });
+        } catch (answerError) {
+          // Ignore errors when answering - query may have expired
+        }
+      }
     });
     
     bot.on("polling_error", (error) => {
