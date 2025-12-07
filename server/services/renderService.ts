@@ -158,16 +158,27 @@ const chartHtml = `
       try {
         if (!chart) initChart();
 
-        const closedCandles = data.candles.map(c => ({
-          time: c.timestamp,
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-        }));
+        // Validate and filter candle data
+        if (!data.candles || !Array.isArray(data.candles) || data.candles.length === 0) {
+          console.error('No candle data provided');
+          chartDataLoaded = false;
+          return;
+        }
 
-        if (data.formingCandle) {
-          closedCandles.push({
+        // Map and validate candles
+        let allCandles = data.candles
+          .filter(c => c && typeof c.timestamp === 'number' && typeof c.open === 'number' && 
+                       typeof c.high === 'number' && typeof c.low === 'number' && typeof c.close === 'number')
+          .map(c => ({
+            time: c.timestamp,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+          }));
+
+        if (data.formingCandle && typeof data.formingCandle.timestamp === 'number') {
+          allCandles.push({
             time: data.formingCandle.timestamp,
             open: data.formingCandle.open,
             high: data.formingCandle.high,
@@ -176,8 +187,26 @@ const chartHtml = `
           });
         }
 
-        candleCount = closedCandles.length;
-        candleSeries.setData(closedCandles);
+        // Sort by time and remove duplicates (keep last occurrence)
+        allCandles.sort((a, b) => a.time - b.time);
+        const uniqueCandles = [];
+        const seenTimes = new Set();
+        for (let i = allCandles.length - 1; i >= 0; i--) {
+          if (!seenTimes.has(allCandles[i].time)) {
+            seenTimes.add(allCandles[i].time);
+            uniqueCandles.unshift(allCandles[i]);
+          }
+        }
+
+        if (uniqueCandles.length === 0) {
+          console.error('No valid candles after processing');
+          chartDataLoaded = false;
+          return;
+        }
+
+        console.log('Setting chart data with', uniqueCandles.length, 'candles');
+        candleCount = uniqueCandles.length;
+        candleSeries.setData(uniqueCandles);
 
         if (data.indicators) {
           const timestamps = data.candles.map(c => c.timestamp);

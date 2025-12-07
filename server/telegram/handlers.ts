@@ -773,13 +773,22 @@ async function handleShowChart(
   const asset = getAssetById(session.symbol);
   const { closed, forming } = sessionManager.getSessionCandles(sessionId);
   
+  logger.info(`Chart request for ${session.symbol}: ${closed.length} closed candles, forming: ${forming ? 'yes' : 'no'}`);
+  
   if (closed.length < 10) {
-    await bot.sendMessage(chatId, `${EMOJIS.WARNING} Not enough candle data yet. Please wait for more data to accumulate.`);
+    await bot.sendMessage(chatId, `${EMOJIS.WARNING} Not enough candle data yet (${closed.length}/10). Please wait for more data to accumulate.`);
     return;
   }
   
   try {
     const chartCandles = closed.slice(-100);
+    
+    // Log sample candle data for debugging
+    if (chartCandles.length > 0) {
+      const first = chartCandles[0];
+      const last = chartCandles[chartCandles.length - 1];
+      logger.info(`Chart data: ${chartCandles.length} candles, first: t=${first.timestamp} OHLC=${first.open}/${first.high}/${first.low}/${first.close}, last: t=${last.timestamp} OHLC=${last.open}/${last.high}/${last.low}/${last.close}`);
+    }
     
     const chartBuffer = await renderService.renderChart({
       candles: chartCandles,
