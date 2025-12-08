@@ -212,8 +212,9 @@ docker run -d \
 
 ## Configuration
 
-### Supported Currency Pairs
+### Supported Assets
 
+#### Forex Pairs (Available Mon-Fri)
 | Pair | Symbol ID | Category |
 |------|-----------|----------|
 | EUR/USD | frxEURUSD | Forex |
@@ -224,6 +225,30 @@ docker run -d \
 | USD/CAD | frxUSDCAD | Forex |
 | NZD/USD | frxNZDUSD | Forex |
 | USD/CHF | frxUSDCHF | Forex |
+| GBP/JPY | frxGBPJPY | Forex |
+| EUR/JPY | frxEURJPY | Forex |
+| AUD/JPY | frxAUDJPY | Forex |
+| EUR/AUD | frxEURAUD | Forex |
+
+#### Cryptocurrencies (24/7)
+| Pair | Symbol ID | Category |
+|------|-----------|----------|
+| BTC/USD | cryBTCUSD | Crypto |
+| ETH/USD | cryETHUSD | Crypto |
+
+#### Synthetic Indices (24/7)
+| Index | Symbol ID | Category |
+|-------|-----------|----------|
+| Volatility 10 | R_10 | Synthetic |
+| Volatility 25 | R_25 | Synthetic |
+| Volatility 50 | R_50 | Synthetic |
+| Volatility 75 | R_75 | Synthetic |
+| Volatility 100 | R_100 | Synthetic |
+| Volatility 10 (1s) | 1HZ10V | Synthetic |
+| Volatility 25 (1s) | 1HZ25V | Synthetic |
+| Volatility 50 (1s) | 1HZ50V | Synthetic |
+| Volatility 75 (1s) | 1HZ75V | Synthetic |
+| Volatility 100 (1s) | 1HZ100V | Synthetic |
 
 ### Timeframes
 
@@ -304,6 +329,29 @@ If charts aren't rendering:
 1. Check `TELEGRAM_BOT_TOKEN` is valid
 2. Verify bot is not blocked/stopped in Telegram
 3. Check server logs for errors
+
+## Recent Updates (December 2024)
+
+### Bug Fixes
+- **Chart Rendering Fixed**: Added data validation, deduplication, and sorting to prevent blank charts
+- **Database Schema Sync**: Fixed missing `telegram_users` table error with proper schema push
+- **Telegram Error Handling**: Added comprehensive try-catch for all callback handlers to prevent server crashes
+- **Chromium Installation**: Added system Chromium package for Puppeteer chart rendering
+
+### New Features
+- **Candle Completion Trigger**: Signals are now sent when candles close, not before
+- **Multi-Timeframe Analysis**: Higher timeframe confluence scoring (up to 15% confidence bonus)
+- **Harmonic Pattern Detection**: Gartley, Butterfly, Bat, Crab, Cypher patterns
+- **Chart Pattern Detection**: Head & Shoulders, Double Top/Bottom, Triangles, Flags, Wedges
+- **Expanded Candlestick Patterns**: 15+ new patterns including Three White Soldiers, Inside Bar, etc.
+- **Advanced ML Ensemble**: 100+ strategies with machine learning integration
+
+### Docker Requirements
+The Dockerfile includes all necessary system packages:
+- **Chromium**: For Puppeteer-based chart rendering
+- **Cairo/Pango**: For node-canvas image generation
+- **librsvg**: For SVG rendering
+- **Build tools**: For native module compilation
 
 ## License
 
