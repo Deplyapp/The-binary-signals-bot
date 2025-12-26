@@ -25,8 +25,10 @@ RUN npm run build
 # ============================================
 FROM node:20-slim AS production
 
-# Install system dependencies for Puppeteer and Canvas
+# Install system dependencies for Puppeteer, Canvas, and PostgreSQL
 RUN apt-get update && apt-get install -y \
+    # PostgreSQL dependencies
+    libpq5 \
     # Chromium dependencies
     chromium \
     fonts-liberation \
@@ -63,6 +65,7 @@ RUN apt-get update && apt-get install -y \
     libjpeg-dev \
     libgif-dev \
     librsvg2-dev \
+    python3 \
     # Clean up
     && rm -rf /var/lib/apt/lists/*
 
@@ -75,7 +78,7 @@ WORKDIR /app
 
 # Copy package files and install production dependencies only
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --production
 
 # Copy built files from builder stage
 COPY --from=builder /app/dist ./dist
